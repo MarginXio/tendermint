@@ -59,11 +59,13 @@ type CListMempool struct {
 
 	logger  log.Logger
 	metrics *mempool.Metrics
-
-	preReapMaxBytesMaxGasHook  func(pool *CListMempool, maxBytes, maxGas int64) (int64, int64)
-	postReapMaxBytesMaxGasHook func(pool *CListMempool, txs types.Txs) types.Txs
-	hookContext                interface{}
 }
+
+var (
+	preReapMaxBytesMaxGasHook  func(ctx interface{}, pool *CListMempool, maxBytes, maxGas int64) (int64, int64)
+	postReapMaxBytesMaxGasHook func(ctx interface{}, pool *CListMempool, txs types.Txs) types.Txs
+	hookContext                interface{}
+)
 
 var _ mempool.Mempool = &CListMempool{}
 
@@ -526,8 +528,8 @@ func (mem *CListMempool) ReapMaxBytesMaxGas(maxBytes, maxGas int64) types.Txs {
 	mem.updateMtx.RLock()
 	defer mem.updateMtx.RUnlock()
 
-	if mem.preReapMaxBytesMaxGasHook != nil {
-		maxBytes, maxGas = mem.preReapMaxBytesMaxGasHook(mem, maxBytes, maxGas)
+	if preReapMaxBytesMaxGasHook != nil {
+		maxBytes, maxGas = preReapMaxBytesMaxGasHook(hookContext, mem, maxBytes, maxGas)
 	}
 
 	var (
@@ -564,8 +566,8 @@ func (mem *CListMempool) ReapMaxBytesMaxGas(maxBytes, maxGas int64) types.Txs {
 		totalGas = newTotalGas
 	}
 
-	if mem.postReapMaxBytesMaxGasHook != nil {
-		txs = mem.postReapMaxBytesMaxGasHook(mem, txs)
+	if postReapMaxBytesMaxGasHook != nil {
+		txs = postReapMaxBytesMaxGasHook(hookContext, mem, txs)
 	}
 
 	return txs
@@ -672,18 +674,18 @@ func (mem *CListMempool) recheckTxs() {
 	mem.proxyAppConn.FlushAsync()
 }
 
-func (mem *CListMempool) InstallReapMaxBytesMaxGasHook(hookContext interface{},
-	prePfn func(pool *CListMempool, maxBytes, maxGas int64) (int64, int64),
-	postPfn func(pool *CListMempool, txs types.Txs) types.Txs) {
-	mem.preReapMaxBytesMaxGasHook = prePfn
-	mem.postReapMaxBytesMaxGasHook = postPfn
-	mem.hookContext = hookContext
+func InstallReapMaxBytesMaxGasHook(ctx interface{},
+	prePfn func(ctx interface{}, pool *CListMempool, maxBytes, maxGas int64) (int64, int64),
+	postPfn func(ctx interface{}, pool *CListMempool, txs types.Txs) types.Txs) {
+	preReapMaxBytesMaxGasHook = prePfn
+	postReapMaxBytesMaxGasHook = postPfn
+	hookContext = ctx
 }
 
-func (mem *CListMempool) RemoveReapMaxBytesMaxGasHook() {
-	mem.preReapMaxBytesMaxGasHook = nil
-	mem.postReapMaxBytesMaxGasHook = nil
-	mem.hookContext = nil
+func RemoveReapMaxBytesMaxGasHook() {
+	preReapMaxBytesMaxGasHook = nil
+	postReapMaxBytesMaxGasHook = nil
+	hookContext = nil
 }
 
 //--------------------------------------------------------------------------------
