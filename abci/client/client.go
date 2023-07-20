@@ -29,6 +29,7 @@ type Client interface {
 	EchoAsync(msg string) *ReqRes
 	InfoAsync(types.RequestInfo) *ReqRes
 	SetOptionAsync(types.RequestSetOption) *ReqRes
+	PreCheckTxAsync(types.RequestDeliverTx) *ReqRes
 	DeliverTxAsync(types.RequestDeliverTx) *ReqRes
 	CheckTxAsync(types.RequestCheckTx) *ReqRes
 	QueryAsync(types.RequestQuery) *ReqRes

@@ -239,6 +239,10 @@ func (cli *socketClient) DeliverTxAsync(req types.RequestDeliverTx) *ReqRes {
 	return cli.queueRequest(types.ToRequestDeliverTx(req))
 }
 
+func (cli *socketClient) PreCheckTxAsync(req types.RequestDeliverTx) *ReqRes {
+	return cli.queueRequest(types.ToRequestDeliverTx(req))
+}
+
 func (cli *socketClient) CheckTxAsync(req types.RequestCheckTx) *ReqRes {
 	return cli.queueRequest(types.ToRequestCheckTx(req))
 }

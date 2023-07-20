@@ -201,6 +201,15 @@ func (cli *grpcClient) SetOptionAsync(params types.RequestSetOption) *ReqRes {
 	return cli.finishAsyncCall(req, &types.Response{Value: &types.Response_SetOption{SetOption: res}})
 }
 
+func (cli *grpcClient) PreCheckTxAsync(params types.RequestDeliverTx) *ReqRes {
+	req := types.ToRequestDeliverTx(params)
+	res, err := cli.client.DeliverTx(context.Background(), req.GetDeliverTx(), grpc.WaitForReady(true))
+	if err != nil {
+		cli.StopForError(err)
+	}
+	return cli.finishAsyncCall(req, &types.Response{Value: &types.Response_DeliverTx{DeliverTx: res}})
+}
+
 func (cli *grpcClient) DeliverTxAsync(params types.RequestDeliverTx) *ReqRes {
 	req := types.ToRequestDeliverTx(params)
 	res, err := cli.client.DeliverTx(context.Background(), req.GetDeliverTx(), grpc.WaitForReady(true))

@@ -3,6 +3,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	abci "github.com/tendermint/tendermint/abci/types"
@@ -264,15 +265,28 @@ func execBlockOnProxyApp(
 	initialHeight int64,
 ) (*tmstate.ABCIResponses, error) {
 	var validTxs, invalidTxs = 0, 0
+	preCheckTxWaitGroup := sync.WaitGroup{}
+	preCheckTxWaitGroup.Add(len(block.Txs))
 
 	txIndex := 0
 	abciResponses := new(tmstate.ABCIResponses)
 	dtxs := make([]*abci.ResponseDeliverTx, len(block.Txs))
 	abciResponses.DeliverTxs = dtxs
 
+	preCheckTxMap := make(map[types.TxKey]*abci.Response_DeliverTx, len(block.Txs))
 	// Execute transactions and get hash.
 	proxyCb := func(req *abci.Request, res *abci.Response) {
 		if r, ok := res.Value.(*abci.Response_DeliverTx); ok {
+
+			if rr, ok := req.Value.(*abci.Request_DeliverTx); ok {
+				txKey := types.Tx(rr.DeliverTx.Tx).Key()
+				if _, ok = preCheckTxMap[txKey]; !ok {
+					preCheckTxMap[txKey] = r
+					preCheckTxWaitGroup.Done()
+					return
+				}
+			}
+
 			// TODO: make use of res.Log
 			// TODO: make use of this info
 			// Blocks may include invalid txs.
@@ -315,8 +329,26 @@ func execBlockOnProxyApp(
 		return nil, err
 	}
 
+	// Precheck txs
+	for _, tx := range block.Txs {
+		_ = tx
+		// TODO: concurrence pre check txs
+		go proxyAppConn.PreCheckTxAsync(abci.RequestDeliverTx{Tx: tx})
+	}
+
+	preCheckTxWaitGroup.Wait()
 	// run txs of block
 	for _, tx := range block.Txs {
+		deliverTx, ok := preCheckTxMap[tx.Key()]
+		if !ok {
+			return nil, errors.New("preCheckTx not found")
+		}
+		// if preCheckTx failed, skip deliverTx
+		if deliverTx.DeliverTx.Code != 0 {
+			proxyCb(abci.ToRequestDeliverTx(abci.RequestDeliverTx{Tx: tx}), &abci.Response{Value: &abci.Response_DeliverTx{deliverTx.DeliverTx}})
+			continue
+		}
+
 		proxyAppConn.DeliverTxAsync(abci.RequestDeliverTx{Tx: tx})
 		if err := proxyAppConn.Error(); err != nil {
 			return nil, err
