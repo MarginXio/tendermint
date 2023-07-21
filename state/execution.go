@@ -3,6 +3,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -264,6 +265,7 @@ func execBlockOnProxyApp(
 	store Store,
 	initialHeight int64,
 ) (*tmstate.ABCIResponses, error) {
+	startTime := time.Now().UnixNano()
 	var validTxs, invalidTxs = 0, 0
 	preCheckTxWaitGroup := sync.WaitGroup{}
 	preCheckTxWaitGroup.Add(len(block.Txs))
@@ -328,6 +330,7 @@ func execBlockOnProxyApp(
 		logger.Error("error in proxyAppConn.BeginBlock", "err", err)
 		return nil, err
 	}
+	beginBlockCost := time.Now().UnixNano() - startTime
 
 	// Precheck txs
 	for _, tx := range block.Txs {
@@ -337,6 +340,7 @@ func execBlockOnProxyApp(
 	}
 
 	preCheckTxWaitGroup.Wait()
+	preCheckTxCost := time.Now().UnixNano() - startTime - beginBlockCost
 	// run txs of block
 	for _, tx := range block.Txs {
 		deliverTx, ok := preCheckTxMap[tx.Key()]
@@ -355,14 +359,21 @@ func execBlockOnProxyApp(
 		}
 	}
 
+	runTxCost := time.Now().UnixNano() - startTime - beginBlockCost - preCheckTxCost
+
 	// End block.
 	abciResponses.EndBlock, err = proxyAppConn.EndBlockSync(abci.RequestEndBlock{Height: block.Height})
 	if err != nil {
 		logger.Error("error in proxyAppConn.EndBlock", "err", err)
 		return nil, err
 	}
+	endBlockCost := time.Now().UnixNano() - startTime - beginBlockCost - preCheckTxCost - runTxCost
 
-	logger.Info("executed block", "height", block.Height, "num_valid_txs", validTxs, "num_invalid_txs", invalidTxs)
+	if os.Getenv("BLOCK_LOG_LEVEL") == "warn" {
+		logger.Error("executed block", "height", block.Height, "num_valid_txs", validTxs, "num_invalid_txs", invalidTxs, "begin_block_cost", time.Duration(beginBlockCost).String(), "pre_check_tx_cost", time.Duration(preCheckTxCost).String(), "run_Tx_cost", time.Duration(runTxCost).String(), "end_block_cost", time.Duration(endBlockCost).String())
+	} else {
+		logger.Info("executed block", "height", block.Height, "num_valid_txs", validTxs, "num_invalid_txs", invalidTxs)
+	}
 	return abciResponses, nil
 }
 
